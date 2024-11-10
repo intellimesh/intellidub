@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, Response
+from fastapi import FastAPI, UploadFile, File, Response, Form
 import openai
 import tempfile
 import os
@@ -27,7 +27,7 @@ def transcribe_audio(file_path):
     result = whisper_model.transcribe(file_path)
     return result["text"]
 
-def translate_text_with_context(text, target_language="te"):
+def translate_text_with_context(text, target_language="es"):
     """Translate text using LlamaIndex with GPT-4 for context-aware translation."""
     document = Document(text=text)
     index = VectorStoreIndex.from_documents([document], llm=llm, embed_model=embed_model)
@@ -62,7 +62,7 @@ def text_to_speech(text, voice="alloy"):
         return None
 
 @app.post("/translate-audio/")
-async def translate_audio(file: UploadFile = File(...), target_language: str = "te"):
+async def translate_audio(file: UploadFile = File(...), target_language: str = Form("es")):
     """Endpoint to handle the translation of an MP3 file."""
     with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as temp_audio:
         temp_audio.write(await file.read())
