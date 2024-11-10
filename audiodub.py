@@ -158,6 +158,28 @@ async def translate_audio(
         if context_file_path and os.path.exists(context_file_path):
             os.remove(context_file_path)
 
+@app.post("/translate-text/")
+async def translate_text_endpoint(
+    text: str = Form(...),
+    target_language: str = Form("es"),
+    context_file: UploadFile = File(None)
+):
+    """Endpoint to handle text input translation with optional context upload."""
+    context_file_path = None
+    try:
+        if context_file:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".txt") as temp_context:
+                temp_context.write(await context_file.read())
+                context_file_path = temp_context.name
+        
+        translated_text = translate_text_with_context(text, target_language, context_file_path)
+        print(f"Translated Text: {translated_text}")
+        
+        return {"translation": translated_text}
+    finally:
+        if context_file_path and os.path.exists(context_file_path):
+            os.remove(context_file_path)
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
