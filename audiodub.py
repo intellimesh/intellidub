@@ -4,6 +4,10 @@ import tempfile
 import os
 import requests
 from llama_index.core import VectorStoreIndex, Document, Settings
+from llama_index.core.query_engine import CustomQueryEngine
+from llama_index.core.retrievers import BaseRetriever
+from llama_index.core import get_response_synthesizer
+from llama_index.core.response_synthesizers import BaseSynthesizer
 from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 from llama_index.llms.openai import OpenAI
 from llama_index.core.agent import ReActAgent
@@ -18,10 +22,17 @@ whisper_model = load_model("base")  # Replace "base" with the specific model you
 
 # Configure OpenAI API keys
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-openai.api_key = OPENAI_API_KEY
+NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY")
+#openai.api_key = OPENAI_API_KEY
+openai.api_key = NVIDIA_API_KEY
+base_url = "https://integrate.api.nvidia.com/v1",
+# model_name="gpt-4"
+model_name = "meta/llama-3.1-405b-instruct"
 
 # Set up LlamaIndex configuration
-Settings.llm = OpenAI(temperature=0.7, model_name="gpt-4")  # Use GPT-4 for better language capabilities
+# Settings.llm = OpenAI(temperature=0.7, model_name="gpt-4")  # Use GPT-4 for better language capabilities
+Settings.llm = OpenAI(base_url = base_url, model_name = model_name, temperature=0.7)
+
 embed_model = HuggingFaceEmbedding(model_name="BAAI/bge-small-en-v1.5")
 
 def transcribe_audio(file_path):
@@ -29,28 +40,56 @@ def transcribe_audio(file_path):
     result = whisper_model.transcribe(file_path)
     return result["text"]
 
+class RAGQueryEngine(CustomQueryEngine):
+    """RAG Query Engine."""
+
+    retriever: BaseRetriever
+    response_synthesizer: BaseSynthesizer
+
+    def custom_query(self, query_str: str):
+        nodes = self.retriever.retrieve(query_str)
+        response_obj = self.response_synthesizer.synthesize(query_str, nodes)
+        return response_obj
+
 def translate_text_with_context(text, target_language="es", context_file_path=None):
     """Translate text using LlamaIndex with GPT-4 for context-aware translation."""
-    documents = [Document(text=text)]
+    primary_document = Document(text=text)
+    context_documents = []
 
     # Add context document if provided
     if context_file_path:
         with open(context_file_path, 'r') as context_file:
             context_text = context_file.read()
-            documents.append(Document(text=context_text))
+            context_documents.append(Document(text=context_text))
     
-    index = VectorStoreIndex.from_documents(documents, embed_model=embed_model)
-    query_engine = index.as_query_engine()
-    
+    # Create index using primary text and any context documents
+    index = VectorStoreIndex.from_documents([primary_document] + context_documents, embed_model=embed_model)
+    # query_engine = index.as_query_engine()
+    retriever = index.as_retriever()
+    synthesizer = get_response_synthesizer(response_mode="compact")
+    query_engine = RAGQueryEngine(
+        retriever=retriever, response_synthesizer=synthesizer
+    )   
     translate_context_tool = QueryEngineTool.from_defaults(
         query_engine,
         name="context_aware_translation",
-        description="A RAG engine for context aware translation.",
+        description="A RAG engine for context-aware translation.",
     )
     agent = ReActAgent.from_tools([translate_context_tool], verbose=True)
-    prompt = f"Translate the following text to {target_language} using the context for improving the translation accuracy: {text}"
+    
+    # Refine prompt to ensure only the source text is translated
+    prompt = (
+        f"Translate the following text to {target_language}: {text}. "
+        f"You may request additional context using context_aware_translation tool. The context helps improve the translation "
+        f"Do not include any context or additional information in the response."
+    )
+    
     response = agent.query(prompt)
-    return response.response.strip()
+    
+    # Extract and return only the translated text
+    translated_text = response.response.strip()
+    return translated_text
+
 
 def text_to_speech(text, voice="alloy"):
     """Generate TTS output using OpenAI's new API in the target language."""
