@@ -3,9 +3,11 @@ import openai
 import tempfile
 import os
 import requests
-from llama_index.core import VectorStoreIndex, Document
+from llama_index.core import VectorStoreIndex, Document, Settings
 from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 from llama_index.llms.openai import OpenAI
+from llama_index.core.agent import ReActAgent
+from llama_index.core.tools import QueryEngineTool
 from whisper import load_model
 from transformers import AutoTokenizer
 
@@ -19,7 +21,7 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 openai.api_key = OPENAI_API_KEY
 
 # Set up LlamaIndex configuration
-llm = OpenAI(temperature=0.7, model_name="gpt-4")  # Use GPT-4 for better language capabilities
+Settings.llm = OpenAI(temperature=0.7, model_name="gpt-4")  # Use GPT-4 for better language capabilities
 embed_model = HuggingFaceEmbedding(model_name="BAAI/bge-small-en-v1.5")
 
 def transcribe_audio(file_path):
@@ -27,14 +29,27 @@ def transcribe_audio(file_path):
     result = whisper_model.transcribe(file_path)
     return result["text"]
 
-def translate_text_with_context(text, target_language="es"):
+def translate_text_with_context(text, target_language="es", context_file_path=None):
     """Translate text using LlamaIndex with GPT-4 for context-aware translation."""
-    document = Document(text=text)
-    index = VectorStoreIndex.from_documents([document], llm=llm, embed_model=embed_model)
+    documents = [Document(text=text)]
+
+    # Add context document if provided
+    if context_file_path:
+        with open(context_file_path, 'r') as context_file:
+            context_text = context_file.read()
+            documents.append(Document(text=context_text))
+    
+    index = VectorStoreIndex.from_documents(documents, embed_model=embed_model)
     query_engine = index.as_query_engine()
     
-    prompt = f"Translate the following text to {target_language} with full context and accuracy: {text}"
-    response = query_engine.query(prompt)
+    translate_context_tool = QueryEngineTool.from_defaults(
+        query_engine,
+        name="context_aware_translation",
+        description="A RAG engine for context aware translation.",
+    )
+    agent = ReActAgent.from_tools([translate_context_tool], verbose=True)
+    prompt = f"Translate the following text to {target_language} using the context for improving the translation accuracy: {text}"
+    response = agent.query(prompt)
     return response.response.strip()
 
 def text_to_speech(text, voice="alloy"):
@@ -62,19 +77,30 @@ def text_to_speech(text, voice="alloy"):
         return None
 
 @app.post("/translate-audio/")
-async def translate_audio(file: UploadFile = File(...), target_language: str = Form("es")):
-    """Endpoint to handle the translation of an MP3 file."""
+async def translate_audio(
+    file: UploadFile = File(...),
+    target_language: str = Form("es"),
+    context_file: UploadFile = File(None)
+):
+    """Endpoint to handle the translation of an MP3 file, with optional context upload."""
     with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as temp_audio:
         temp_audio.write(await file.read())
         temp_audio_path = temp_audio.name
 
+    context_file_path = None
     try:
+        # Save context file if provided
+        if context_file:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".txt") as temp_context:
+                temp_context.write(await context_file.read())
+                context_file_path = temp_context.name
+        
         # Step 1: Transcribe audio
         transcription = transcribe_audio(temp_audio_path)
         print(f"Transcription: {transcription}")
 
         # Step 2: Translate text using LlamaIndex with GPT-4 for context
-        translated_text = translate_text_with_context(transcription, target_language)
+        translated_text = translate_text_with_context(transcription, target_language, context_file_path)
         print(f"Translated Text: {translated_text}")
 
         # Step 3: Generate TTS audio
@@ -87,9 +113,11 @@ async def translate_audio(file: UploadFile = File(...), target_language: str = F
             return {"message": "TTS generation failed.", "translation": translated_text}
 
     finally:
-        # Remove only the temporary input audio file
+        # Remove temporary files
         if os.path.exists(temp_audio_path):
             os.remove(temp_audio_path)
+        if context_file_path and os.path.exists(context_file_path):
+            os.remove(context_file_path)
 
 if __name__ == "__main__":
     import uvicorn
