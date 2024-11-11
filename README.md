@@ -53,7 +53,8 @@ This approach is particularly useful for technical, academic, or domain-specific
        -H "Content-Type: multipart/form-data" \
        -F "file=@path/to/audio.mp3" \
        -F "target_language=es" \
-       -F "context_file=@path/to/context.txt"
+       -F "context_file=@path/to/context.txt" \
+       --output result.mp3
   ```
 
 ### 2. **/translate-text/**
@@ -64,10 +65,11 @@ This approach is particularly useful for technical, academic, or domain-specific
   - `context_file` (optional): A text file providing context to improve translation.
 - **Example cURL Command**:
   ```bash
-  curl -X POST "http://localhost:8000/translate-text/" \
-       -H "Content-Type: application/x-www-form-urlencoded" \
-       -d "text=Hello, how are you?" \
-       -d "target_language=es"
+curl -X POST "http://localhost:8000/translate-text/" \
+     -H "Content-Type: multipart/form-data" \
+     -F "text=Hello, how are you?" \
+     -F "target_language=es" \
+     -F "context_file=@path/to/context.txt"
   ```
 
 ## Testing
@@ -87,13 +89,11 @@ To test the endpoints, you can use the provided example cURL commands or use too
 Ensure these dependencies are listed in `requirements.txt` for easy installation.
 
 ## Notes
-- This project assumes that the `Whisper` model and other dependencies are installed and correctly set up.
+- This project assumes that the dependencies are installed and correctly set up.
 - The necessary API keys must be valid and have the necessary permissions for accessing the relevant services.
 - **Audio-to-audio dubbing** requires both `OPENAI_API_KEY` and `NVIDIA_API_KEY` for full functionality.
 - **Text-to-text translation** only requires `NVIDIA_API_KEY`, making `OPENAI_API_KEY` optional in this case.
 
 ## License
-Specify the license type here (e.g., MIT, Apache 2.0).
+MIT.
 
-## Author
-Include your name or organization here.
