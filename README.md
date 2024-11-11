@@ -1,4 +1,4 @@
-# IntelliDub: Advanced Context-Aware Multilingual Translation and Dubbing Platform
+# IntelliDub: Advanced Context-Aware Translation and Dubbing Platform
 
 ## Project Overview
 This project provides an advanced solution for translating audio and text input, with **Context-Aware Translation** as its primary feature. This approach significantly enhances the quality of translations by leveraging contextual information to ensure that translations are not just literal but contextually relevant, maintaining meaning across various nuances of language.
